@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#eef0ed"><title>OpenArm — Autonomous Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><rect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%23142f2b%22/><path d=%22M8 24V14l8-7 8 7v10%22 stroke=%22%23bce6c7%22 fill=%22none%22 stroke-width=%223%22/></svg>">
+  <link rel="stylesheet" href="/style.css">
+  <script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/controls/OrbitControls.js":"/vendor/OrbitControls.js","three/addons/geometries/RoundedBoxGeometry.js":"/vendor/RoundedBoxGeometry.js"}}</script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="OpenArm home"><svg viewBox="0 0 32 32" fill="none"><path d="M7 25V14l9-8 9 8v11M12 25v-8l4-4 4 4v8" stroke="currentColor" stroke-width="2.5"/></svg><span>OpenArm<span class="brand-light"> / lab</span></span></a>
+    <nav aria-label="Workspace"><span class="nav-active">Workcell</span><span class="nav-note">Autonomous manipulation</span></nav>
+    <div class="model-tag"><span class="spark">✳</span> Powered by <strong>Jev</strong><span class="tag">ONLY</span></div>
+  </header>
+  <main>
+    <section class="page-heading"><div><div class="eyebrow">ROBOTICS PLAYGROUND / EXPERIMENT 001</div><h1>A little arm. <span>A mind of its own.</span></h1><p>Give it a mission. Watch Jev turn observations into actions.</p></div><div class="connection"><span id="connection-dot" class="dot amber"></span><span id="connection-label">Connecting to lab…</span><span class="local-badge">LOCAL</span></div></section>
+    <div class="workspace">
+      <section class="simulation panel" aria-label="Interactive 3D robot simulation">
+        <div class="sim-top"><div class="live-label"><span id="sim-dot" class="dot"></span><span id="sim-state">WORKCELL READY</span></div><span class="sim-version">KINEMATIC SIMULATION <span>·</span> 7 AXES</span></div>
+        <div id="viewport"><div id="webgl-error" hidden>WebGL is unavailable. Enable hardware acceleration in your browser to view the workcell.</div></div>
+        <div class="scene-legend"><span><i style="--swatch:#55b5a0"></i>Jade</span><span><i style="--swatch:#e6a94c"></i>Amber</span><span><i style="--swatch:#a69adc"></i>Violet</span><span><i class="defect"></i>Damaged part</span></div>
+        <div class="camera-tools"><button id="camera-reset" class="icon-button" title="Reset camera" aria-label="Reset camera">⌖</button><button id="camera-top" class="icon-button" title="Top view" aria-label="Top view">⊞</button><button id="trail-toggle" class="icon-button active" title="Toggle motion trail" aria-label="Toggle motion trail" aria-pressed="true">⌁</button></div>
+        <div class="stage-overlay"><span class="stage-icon" id="stage-icon">↗</span><div><span class="small-label">CURRENT ACTION</span><div id="current-action">Ready for your first mission</div></div><span id="stage-count">—</span></div>
+        <div class="sim-bottom"><span><span class="mouse-icon">⌘</span> Drag to orbit <span class="separator">/</span> Scroll to zoom</span><div class="speed-control"><label for="speed">Speed</label><input id="speed" type="range" min="0.5" max="3" value="1" step="0.5"><output id="speed-value">1×</output></div></div>
+      </section>
+      <aside class="mission panel">
+        <div class="section-title"><span class="eyebrow">MISSION CONTROL</span><span class="small-badge">01</span></div>
+        <h2>What should we do?</h2><p class="muted">Set the goal. Jev chooses every pick and place.</p>
+        <div class="recipes" role="group" aria-label="Mission presets"><button data-recipe="quality" class="recipe active">✧ Quality sort</button><button data-recipe="color" class="recipe">◉ Color sort</button><button data-recipe="inspect" class="recipe">⌕ Inspect all</button><button data-recipe="violet" class="recipe">↗ Violet only</button></div>
+        <label for="mission-input" class="sr-only">Mission instruction</label><textarea id="mission-input" maxlength="1600" rows="4" spellcheck="false"></textarea>
+        <div class="mission-input-footer"><span>Natural language → typed decisions</span><span>↵</span></div>
+        <button id="start" class="primary" disabled><span id="start-text">Start mission</span><span>↗</span></button>
+        <div class="secondary-controls"><button id="pause" disabled>Ⅱ Pause</button><button id="calibrate" title="Exercise the motion controller without calling a model">⌁ Motion check</button><button id="reset">↺ Reset</button><button id="stop" disabled>■ Stop</button></div>
+        <div id="notice" class="notice" role="status" hidden></div>
+        <div class="mission-progress"><div><span class="small-label">PARTS PLACED</span><strong><span id="placed-count">0</span><span class="out-of"> / 6</span></strong></div><div class="progress-track"><div id="progress-fill"></div></div><p id="progress-caption">Six parts. Four trays. One decision at a time.</p></div>
+        <div class="divider"></div>
+        <div class="section-title"><span class="eyebrow">CHANGE THE SCENE</span><span class="small-badge">LIVE</span></div><p class="muted compact">Block a tray. The next decision adapts.</p>
+        <div id="tray-toggles" class="tray-toggles"></div>
+        <div class="boundary"><span>⌘</span><p>Virtual workcell only. Model decisions drive a bounded motion controller; no physical robot is connected.</p></div>
+      </aside>
+    </div>
+    <section class="telemetry-grid">
+      <article class="panel decision-panel"><div class="section-title"><span class="eyebrow">INSIDE THE DECISION</span><span id="decision-source" class="tiny-pill">AWAITING JEV</span></div><div class="decision-head"><h2 id="decision-title">Observe. Decide. Move.</h2><span id="confidence">—<small>confidence</small></span></div><div id="probabilities" class="probabilities"><div class="empty-prob"><span></span><span></span><span></span><p>Real model probabilities appear here after each decision.</p></div></div><div class="decision-footer"><span>Model <strong>typesafe/jev</strong></span><span>Latency <strong id="latency">—</strong></span></div></article>
+      <article class="panel activity-panel"><div class="section-title"><span class="eyebrow">ACTIVITY STREAM</span><button id="export" class="text-button" disabled>Export run ↗</button></div><div id="activity" role="log" aria-live="polite"><div class="activity-item"><span class="activity-dot"></span><div><strong>Workcell initialized</strong><p>6 parts observed · 1 marked damaged · 4 trays available</p></div><time>READY</time></div></div></article>
+      <article class="panel joint-panel"><div class="section-title"><span class="eyebrow">ARM TELEMETRY</span><span class="tiny-pill">IK CONTROL</span></div><div id="joints" class="joints"></div><div class="coordinates"><span>TCP <strong id="tcp">—</strong></span><span id="gripper-state">GRIPPER OPEN</span></div></article>
+    </section>
+    <footer><span><span class="footer-mark">✳</span> Built for curiosity. Powered by structured decisions.</span><span>OpenArm × Jev <span class="footer-sep">/</span> Local research demo</span></footer>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

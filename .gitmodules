@@ -1,0 +1,3 @@
+[submodule "openarm"]
+	path = openarm
+	url = https://github.com/enactic/openarm.git
