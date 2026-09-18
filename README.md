@@ -107,6 +107,94 @@ input: { state: { operator_mission, objects, trays, rules },
          questions: { next_action: { type: "choice", instructions, criteria } } }
 ```
 
+### Exactly what Jev can choose on each call
+
+Each call asks **one Choice question, `next_action`**, and Jev selects exactly one
+ID from the supplied `criteria` map. A movement choice specifies an **object and a
+tray**; it represents a complete pick-and-place operation. The available forms are:
+
+| Choice ID | Meaning |
+|---|---|
+| `move_<objectId>_jade` | Pick that part and place it in the jade tray. |
+| `move_<objectId>_amber` | Pick that part and place it in the amber tray. |
+| `move_<objectId>_violet` | Pick that part and place it in the violet tray. |
+| `move_<objectId>_inspection` | Pick that part and place it in the inspection tray. |
+| `finish` | End the current mission because Jev judges the requested goal complete. |
+| `wait` | End the decision loop and hold for operator input because no appropriate move is available, or the request is ambiguous or unsupported. |
+
+For example, `move_P05_inspection` means “pick P05 and put it in the inspection
+tray.” The initial scene contains P01–P06: jade, amber, violet, violet, damaged jade,
+and amber, respectively.
+
+**The initial call offers 26 choices:** six pending parts × four available trays,
+plus `finish` and `wait`. The server rebuilds this list from the scene on every call:
+
+- Only parts with `status: pending` can be picked. A placed part cannot be moved
+  again during the same scene, even if it was placed in the wrong tray.
+- Blocked trays are excluded, as are trays already containing six placed parts.
+- Every pending part can go to every remaining available tray. Color and damage
+  do **not** filter the candidates: interpreting the mission and choosing the
+  appropriate destination is Jev's job.
+- `finish` and `wait` are always offered, including when no movement is available.
+
+After one part is placed, with all trays still available, the next call has
+5 × 4 + 2 = **22 choices**. Blocking one tray in the initial six-part scene gives
+6 × 3 + 2 = **20 choices**. If every tray is blocked, only `finish` and `wait` remain;
+for an unfinished mission the intended choice is `wait`.
+
+### What information guides that choice
+
+The request contains the operator's mission, each object's ID, color, damage flag,
+pending/placed status and destination, and each tray's purpose, blocked state and
+capacity. It also includes operating rules and a description of each candidate,
+such as “Pick P05, a jade part (DAMAGED), and place it in the Inspection tray.”
+The prompt asks Jev to prefer the lowest object ID among equally appropriate moves.
+
+These are structured facts supplied by the simulator. Jev does not receive camera
+images, joint angles, Cartesian coordinates, or previous response history in this
+request; damage and color are already labeled for it. Each call uses a fresh scene
+snapshot, including the results of previous completed placements.
+
+The same candidate list can produce different choices under different missions:
+
+| Mission and observed state | Intended next choice |
+|---|---|
+| Quality sort; damaged jade P05 is the last pending part | `move_P05_inspection` |
+| Color sort regardless of damage; P05 is the last pending part | `move_P05_jade` |
+| Inspect all; P01 is next | `move_P01_inspection` |
+| Violet only; P03 and P04 are pending | `move_P03_violet`, then `move_P04_violet` on a later call |
+| Violet only; both violet parts are placed but other colors remain | `finish` |
+| Violet only; the violet tray is blocked | `wait` |
+
+These describe the intended behavior, not hard-coded routing rules. Validation
+checks that an answer is an offered action; it does not prove the choice satisfies
+the mission. For example, sending a jade part to an available amber tray is a valid
+candidate even when it would be a sorting mistake.
+
+### What the motion controller does after a choice
+
+Once a move is accepted, application code chooses the next free slot in the target
+tray and executes ten fixed phases: clear the workspace, approach the part, lower,
+close the gripper, lift, clear the pedestal, transfer, lower into the tray, release,
+and retract. It solves joint motion and updates the object's state. **Jev is called
+again only after that full operation**, rather than once per animation frame or
+once per joint movement. A six-part sorting mission normally needs six move
+choices and one final `finish` choice.
+
+Jev cannot choose individual joint angles, torques, speeds, intermediate waypoints,
+gripper commands, arbitrary coordinates, or new action types. It cannot create
+objects, stack them, rearrange already placed parts, or issue code for execution.
+The operator controls pause, stop, reset, speed, and tray blocking. A `wait` result
+requires an explicit restart with **Continue mission** after changing the scene or
+instruction; it does not poll the model automatically. The **Motion check** button
+runs a separate fixed controller test with no Jev calls.
+
+If the scene changes while a model request is in flight, the returned decision is
+discarded and a fresh one is requested. A tray targeted by a move already underway
+cannot be blocked until that operation finishes.
+
+### Response checks and execution limits
+
 Jev returns a typed choice, confidence, and probabilities. The server validates
 these against the offered actions. API errors, invalid responses, confidence below
 50%, or unreachable motion targets pause the mission. There is a 16-decision
