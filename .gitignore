@@ -4,3 +4,7 @@ node_modules/
 !.env.example
 artifacts/
 .DS_Store
+
+# Optional local demo recording; keep normal clones small.
+/demo/demo.mov
+/demo/demo.mp4

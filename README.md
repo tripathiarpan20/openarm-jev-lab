@@ -5,6 +5,14 @@ A local, interactive robot workcell. Give the arm a natural-language mission;
 structured scene. Seven-axis inverse kinematics drives the visual arm. No other
 model, prerecorded model response, or rule-based decision fallback is used.
 
+## Demo recording
+
+https://github.com/user-attachments/assets/a23491db-a75c-41c5-8818-ad9a194238c6
+
+Watch the 31-second demo inline on GitHub. The video is hosted as a GitHub
+attachment, so normal clones do not download it. Optional local recordings
+(`demo/demo.mp4` and `demo/demo.mov`) are ignored by Git; the app runs without them.
+
 ## Local setup and launch
 
 Requires Node.js 22 (tested with 22.23.2), npm, Git, and a browser with WebGL.
