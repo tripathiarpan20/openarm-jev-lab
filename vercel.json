@@ -9,12 +9,6 @@
       "maxDuration": 30
     }
   },
-  "rewrites": [
-    {
-      "source": "/",
-      "destination": "/libero.html"
-    }
-  ],
   "headers": [
     {
       "source": "/(.*)",
@@ -32,6 +26,13 @@
           "value": "DENY"
         }
       ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/libero.html",
+      "permanent": false
     }
   ]
 }
