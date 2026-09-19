@@ -1,0 +1,14 @@
+[
+  {
+    "id": "web-live",
+    "name": "Improved · live worker verification"
+  },
+  {
+    "id": "improved",
+    "name": "Improved · geometry-aware choices"
+  },
+  {
+    "id": "baseline",
+    "name": "Original · 195 directions"
+  }
+]

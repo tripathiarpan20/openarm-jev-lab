@@ -8,3 +8,7 @@ artifacts/
 # Optional local demo recording; keep normal clones small.
 /demo/demo.mov
 /demo/demo.mp4
+
+# Web build and Vercel local metadata
+dist/
+.vercel/

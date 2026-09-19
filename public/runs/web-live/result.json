@@ -1,0 +1,40 @@
+{
+  "experimental": true,
+  "official_benchmark_comparable": false,
+  "metadata": {
+    "policy": "jev-grounded-libero",
+    "model": "typesafe/jev",
+    "action_space": "normalized OSC_POSE + gripper, not joint deltas",
+    "action_horizon": 5,
+    "action_dim": 7,
+    "action_set": "grounded",
+    "choices": "state-dependent, at most 3 + 5 per object",
+    "observation_mode": "sim-oracle",
+    "privileged_observations": true,
+    "images_processed": false,
+    "checkpoint_submission_eligible": false
+  },
+  "libero_pro_revision": "eafdb809426b13153aa1e4c42d6601844217dfec",
+  "controller_source_sha256": {
+    "actions.py": "45309f1964fb66d5e600f70e0e60c5e0755fcfe36256b7146ddf41be793c1d70",
+    "grounded.py": "33529a123b766639c77754cb9045397a66c5f93f615d79bc9f7be0f39b6c0054",
+    "policy.py": "e1cca50fa57c685686cb8240dbcf93551b26758d870a78a4dc49b55300719db1",
+    "cloudflare.py": "1510a4b3852de17b54defd0429daca4c10299879b945cdae58150849fb746a29",
+    "run_libero.py": "691a1c4b532446788f1e87a9e681f27310ede3407c690568bdc47f7f56c2d4c7"
+  },
+  "suite": "libero_spatial_swap",
+  "task_id": 0,
+  "task_name": "pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate",
+  "prompt": "pick the akita black bowl between the plate and the ramekin and place it on the plate",
+  "seed": 7,
+  "init_index": 0,
+  "steps": 103,
+  "calls": 21,
+  "success": true,
+  "termination": "simulator_success",
+  "error": null,
+  "horizon": 5,
+  "max_steps": 220,
+  "max_calls": 44,
+  "wall_seconds": 16.51
+}

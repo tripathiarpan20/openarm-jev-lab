@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#edf0e9" />
+    <meta
+      name="description"
+      content="Inspect Jev's real movement decisions in the LIBERO robot simulator. Compare recorded runs or connect a live simulation worker."
+    />
+    <title>Jev / Motion Lab</title>
+    <link rel="stylesheet" href="/libero.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/">Jev<span> / motion lab</span></a>
+      <nav>
+        <span class="current">LIBERO experiment</span
+        ><a href="/index.html">OpenArm workcell ↗</a>
+      </nav>
+      <span class="model">typesafe/jev <i></i></span>
+    </header>
+    <main>
+      <div class="heading">
+        <div>
+          <p class="eyebrow">OPENROBOTO ENVIRONMENT / MOVEMENT CONTROL</p>
+          <h1>One choice. <span>Then the next.</span></h1>
+        </div>
+        <div class="heading-note">
+          Real physics. Measured decisions.<br /><strong
+            >Experimental · simulator state provided</strong
+          >
+        </div>
+      </div>
+      <div class="toolbar">
+        <label for="run">Experiment</label
+        ><select id="run" disabled>
+          <option>Loading recordings…</option></select
+        ><span id="outcome" class="pill">Loading</span>
+        <div class="toolbar-right">
+          <button id="live-toggle" disabled>Live simulation ↗</button
+          ><a
+            id="result-link"
+            href="/runs/baseline/result.json"
+            target="_blank"
+            rel="noreferrer"
+            >Run data ↓</a
+          >
+        </div>
+      </div>
+      <div id="notice" role="status" hidden></div>
+      <div class="workspace">
+        <section class="viewer">
+          <div class="viewer-top">
+            <span id="source"><i></i> RECORDED SIMULATION</span
+            ><span id="frame">20 Hz / MuJoCo</span>
+          </div>
+          <div class="camera">
+            <video
+              id="video"
+              playsinline
+              preload="auto"
+              poster="/runs/baseline/final.png"
+              aria-label="Actual LIBERO simulation recording"
+            ></video
+            ><img
+              id="live-frame"
+              hidden
+              alt="Current frame from the live MuJoCo worker"
+            />
+            <div class="camera-caption">
+              <span>AGENT VIEW</span><span>LIBERO-PRO / PANDA</span>
+            </div>
+          </div>
+          <div class="playbar">
+            <button id="play" class="primary" disabled>▶ Play run</button
+            ><button id="restart" aria-label="Restart playback">↺</button
+            ><input
+              id="scrub"
+              aria-label="Simulation playback time"
+              type="range"
+              min="0"
+              max="11"
+              step="0.05"
+              value="0"
+            /><output id="time">0.0 / — s</output
+            ><select id="speed" aria-label="Playback speed">
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="2">2×</option>
+            </select>
+          </div>
+          <p class="caption" id="video-note">
+            Actual simulator recording. Playback omits API waiting time.
+          </p>
+        </section>
+        <aside class="decision">
+          <div class="section-label">
+            <span>INSIDE THE DECISION</span><span id="call">CALL —</span>
+          </div>
+          <h2 id="choice">Loading measured trace</h2>
+          <p id="description">
+            Jev chooses a bounded movement, receives a fresh observation, and
+            chooses again.
+          </p>
+          <div class="numbers">
+            <div><span>Confidence</span><strong id="confidence">—</strong></div>
+            <div><span>Request time</span><strong id="latency">—</strong></div>
+          </div>
+          <div class="section-label">
+            <span>TRANSLATION COMMAND</span><span>−1 TO +1</span>
+          </div>
+          <div id="axes"></div>
+          <div class="grip">
+            <span>Gripper</span><strong id="grip">—</strong>
+          </div>
+          <div class="section-label">
+            <span>TOP CHOICES</span><span>PROBABILITY</span>
+          </div>
+          <div id="probabilities"></div>
+          <div class="stepper">
+            <button id="prev">← Previous choice</button
+            ><button id="next">Next choice →</button>
+          </div>
+        </aside>
+      </div>
+      <section class="task">
+        <span class="eyebrow">THE TASK</span>
+        <h2 id="task">Loading task instruction…</h2>
+        <div class="stats">
+          <div><span>Model calls</span><strong id="calls">—</strong></div>
+          <div><span>Simulation steps</span><strong id="steps">—</strong></div>
+          <div><span>Median request</span><strong id="median">—</strong></div>
+          <div><span>Wall time</span><strong id="wall">—</strong></div>
+        </div>
+      </section>
+      <section id="live-panel" hidden>
+        <div>
+          <p class="eyebrow">NEW RUN / REAL PHYSICS</p>
+          <h2>Let Jev try again.</h2>
+          <p>
+            Runs the improved controller in a separate MuJoCo service. Every
+            movement calls Jev; no recorded answers are reused.
+          </p>
+        </div>
+        <label
+          >Demo access key
+          <input
+            id="access-key"
+            type="password"
+            autocomplete="off"
+            placeholder="Required only on a hosted demo"
+        /></label>
+        <div class="live-controls">
+          <button id="start-live" class="primary">Start 220-step run</button
+          ><button id="stop-live" disabled>Stop run</button
+          ><button id="reconnect" hidden>Reconnect</button
+          ><button id="return-recording" hidden>Return to recording</button
+          ><span id="worker-status">Checking worker…</span>
+        </div>
+      </section>
+      <footer>
+        <p>
+          Jev selects every movement. A bounded geometric controller executes
+          each choice.<br />Object positions come from the simulator, not
+          vision. This is not an official miner score.
+        </p>
+        <a
+          href="https://github.com/tripathiarpan20/openarm-jev-lab/tree/arpan/jev-openroboto-web-demo"
+          target="_blank"
+          rel="noreferrer"
+          >Source & setup ↗</a
+        >
+      </footer>
+    </main>
+    <script type="module" src="/libero.js"></script>
+  </body>
+</html>

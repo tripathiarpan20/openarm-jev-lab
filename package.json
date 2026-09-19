@@ -5,7 +5,13 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file-if-exists=.env server.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "build": "node scripts/build.mjs"
   },
-  "dependencies": { "three": "0.180.0" }
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "engines": {
+    "node": "22.x"
+  }
 }
