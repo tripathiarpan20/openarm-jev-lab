@@ -12,3 +12,5 @@ artifacts/
 # Web build and Vercel local metadata
 dist/
 .vercel/
+.vercel
+.env*
