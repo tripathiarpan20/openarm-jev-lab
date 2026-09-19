@@ -147,18 +147,18 @@ collision-certified or general-purpose robot controller.
 
 ## Deploy to Vercel
 
-Deploy the repository root from branch **`arpan/jev-openroboto-web-demo`**.
+Deploy the repository root from **`main`** (or your reviewed feature branch).
 `vercel.json` configures the static build and the three Node API functions.
 
 ```bash
 npm run build
-# From this feature branch, with your Vercel account authenticated:
+# With your Vercel account authenticated:
 npx vercel
 # When ready to publish the reviewed deployment:
 npx vercel --prod
 ```
 
-Or push this branch and import the GitHub repository in Vercel. Select **Other**,
+Or import the GitHub repository in Vercel and select the branch to deploy. Select **Other**,
 Node **22.x**, build command **`npm run build`**, output directory **`dist`**,
 and the repository root. The supplied configuration already sets these build
 values. The build copies only public assets and the required Three.js modules.
@@ -168,8 +168,9 @@ It does not package the private `.env`, Python environment or simulator sources.
 outside the Vercel functions. To enable browser task selection, querying and fresh rollouts on a hosted deployment:
 
 1. Run the Python worker on a machine with the pinned simulator installed. Export
-   a random `SIMULATOR_TOKEN` of at least 24 characters, run it with
-   `--host 0.0.0.0`, and place it behind an authenticated HTTPS reverse proxy.
+   random `SIMULATOR_TOKEN` of at least 24 characters and expose it through an
+   HTTPS reverse proxy. Keep the worker on `127.0.0.1` when the proxy runs on the
+   same machine; use `--host 0.0.0.0` only when your hosting network requires it.
    The worker itself verifies `Authorization: Bearer <SIMULATOR_TOKEN>`.
 2. Set these private Vercel environment variables, then redeploy:
    - `SIMULATOR_URL`: the worker's HTTPS origin (no path or credentials).
@@ -187,6 +188,181 @@ anyone you share it with can request further bounded episodes.
 Implementation follows [Vercel's Node function convention](https://vercel.com/docs/functions/runtimes/node-js)
 and [project configuration](https://vercel.com/docs/project-configuration).
 The production bundle has been built locally; no Vercel deployment is claimed.
+
+## Always-on cloud simulation worker
+
+To run new tasks with your laptop switched off, host the Python worker on a cloud
+VM. Vercel hosts the website and API proxy; the VM runs MuJoCo and calls hosted
+Jev. A tunnel to your laptop does not provide independent, always-on hosting.
+
+```text
+Browser → Vercel → HTTPS reverse proxy on cloud VM → Python worker → MuJoCo + Jev
+```
+
+Use an Ubuntu 24.04 **x86-64** VM, for example a DigitalOcean Droplet. Start with
+2 vCPUs, 4 GB RAM and enough disk for the Python environment, assets and generated
+recordings (80 GB is a reasonable starting allocation). This is a starting estimate,
+not a tested capacity guarantee; check current [provider pricing](https://www.digitalocean.com/pricing/droplets).
+No inference GPU is required. OSMesa provides CPU rendering; Jev inference runs
+through Cloudflare. This Linux deployment recipe still needs validation on your
+VM; the previously verified simulator setup was macOS.
+
+### 1. Install dependencies and pinned assets
+
+SSH into the VM as a non-root user with sudo access. Run these commands **on the
+VM**, not on your laptop:
+
+```bash
+sudo apt update
+sudo apt install -y git curl python3-pip python3-venv build-essential \
+  libosmesa6-dev libgl1 libegl1 libglib2.0-0 caddy
+
+python3 -m venv ~/bootstrap
+~/bootstrap/bin/pip install uv
+export PATH="$HOME/bootstrap/bin:$PATH"
+
+git clone https://github.com/tripathiarpan20/openarm-jev-lab.git
+cd ~/openarm-jev-lab/experiments/jev-controller
+bash setup.sh
+
+.venv/bin/python scripts/download_pro_assets.py \
+  --suite libero_spatial_swap \
+  --revision c86fc3b8293185a6f373677018ff3e37f8391602
+```
+
+Before exposing the service, check headless rendering without spending Jev calls:
+
+```bash
+MUJOCO_GL=osmesa PYOPENGL_PLATFORM=osmesa \
+.venv/bin/python -m jev_robot.run_libero \
+  --libero-root third_party/LIBERO-PRO \
+  --observation-mode sim-oracle --sim-smoke
+```
+
+Resolve any installation or rendering failure before continuing.
+[MuJoCo supports OSMesa for headless software rendering](https://mujoco.readthedocs.io/en/3.3.4/programming/).
+
+### 2. Configure worker secrets
+
+Create a private environment file:
+
+```bash
+sudo install -m 600 /dev/null /etc/jev-worker.env
+sudoedit /etc/jev-worker.env
+```
+
+The `install` command is for first-time setup only; do not rerun it over an
+existing secrets file. Enter actual values in the editor:
+
+```dotenv
+CLOUDFLARE_ACCOUNT_ID=your_account_id
+CLOUDFLARE_API_TOKEN=your_cloudflare_token
+SIMULATOR_TOKEN=your_random_secret_of_at_least_24_characters
+MUJOCO_GL=osmesa
+PYOPENGL_PLATFORM=osmesa
+```
+
+Use the same `SIMULATOR_TOKEN` in Vercel. Keep `DEMO_ACCESS_KEY` separate; it is
+entered by the demo user and is not the worker token. Cloudflare credentials are
+needed on the VM for LIBERO runs. Do not commit this file.
+
+### 3. Keep the worker running with systemd
+
+Create the service definition:
+
+```bash
+sudoedit /etc/systemd/system/jev-worker.service
+```
+
+Replace `YOUR_USER` and both checkout paths below with your VM username and
+absolute paths. The working directory matters because assets and artifacts use
+relative paths.
+
+```ini
+[Unit]
+Description=Jev MuJoCo worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/openarm-jev-lab/experiments/jev-controller
+EnvironmentFile=/etc/jev-worker.env
+ExecStart=/home/YOUR_USER/openarm-jev-lab/experiments/jev-controller/.venv/bin/python -u -m jev_robot.worker --host 127.0.0.1 --port 8788
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Start it and enable automatic startup after reboots:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now jev-worker
+sudo systemctl status jev-worker --no-pager
+sudo journalctl -u jev-worker -n 50 --no-pager
+```
+
+`EnvironmentFile` exports the worker token and Cloudflare credentials into the
+process. The worker's `--env-file` option alone only loads Cloudflare credentials
+for simulation runs; it does not configure the worker authentication token.
+
+### 4. Publish a permanent HTTPS address
+
+Create a DNS A record such as `sim.yourdomain.com` pointing to the VM's public IPv4
+address. Allow inbound TCP **80 and 443** in the cloud firewall and OS firewall,
+and retain SSH access. Do not expose port **8788** publicly.
+
+On this dedicated VM, edit `/etc/caddy/Caddyfile` to contain the following,
+replacing the example hostname with your real domain:
+
+```caddy
+sim.yourdomain.com {
+    reverse_proxy 127.0.0.1:8788
+}
+```
+
+Validate and activate it:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl enable --now caddy
+sudo systemctl reload caddy
+```
+
+[Caddy provisions and renews HTTPS certificates automatically](https://caddyserver.com/docs/automatic-https).
+Here `127.0.0.1` is correct: Caddy and the worker run on the **same cloud VM**.
+The worker checks its bearer token; Vercel supplies that token and the required
+`X-Jev-Lab` header. Opening the worker URL directly in a browser is not an
+authenticated health check.
+
+### 5. Connect Vercel and verify a fresh run
+
+Set these server-side variables in the Vercel project for the environments you
+use, then **redeploy**:
+
+| Variable | Value |
+| --- | --- |
+| `SIMULATOR_URL` | `https://sim.yourdomain.com` — HTTPS origin only, no path |
+| `SIMULATOR_TOKEN` | Exactly the token in `/etc/jev-worker.env` |
+| `DEMO_ACCESS_KEY` | A separate private demo password of at least 24 characters |
+
+Never use `127.0.0.1` as `SIMULATOR_URL` on Vercel: it refers to the Vercel
+runtime, not your cloud VM. Your local `.env` is not automatically uploaded.
+
+Open the **new deployment's** `/libero.html`, enter the demo access key, and click
+**Connect / refresh tasks**. Verify the task catalog loads, then try **Query Jev**
+and **Run task**. These make paid Jev calls. Disconnect SSH and confirm the demo
+still works; systemd keeps the cloud worker running independently of your laptop.
+
+For failures, inspect `sudo journalctl -u jev-worker -n 100 --no-pager` and
+`sudo journalctl -u caddy -n 100 --no-pager`. After changing worker secrets,
+restart with `sudo systemctl restart jev-worker`; after changing Vercel variables,
+redeploy Vercel. The worker currently runs one episode at a time. Generated
+artifacts accumulate on the VM, so monitor disk usage and remove old runs when
+no longer needed.
 
 ## Reproduce and add a recording
 
