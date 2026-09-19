@@ -1,5 +1,6 @@
 const $ = (id) => document.getElementById(id),
   video = $("video");
+let tasks = [];
 let trace = [],
   result = null,
   index = 0,
@@ -28,7 +29,11 @@ function displayDecision(d) {
   );
   text("confidence", `${(d.jev.confidence * 100).toFixed(0)}%`);
   text("latency", `${Math.round(d.timing.infer_ms)} ms`);
-  text("grip", d.actions[0][6] > 0 ? "CLOSE COMMANDED" : "OPEN COMMANDED");
+  text(
+    "grip",
+    (d.actions[0][6] > 0 ? "CLOSE" : "OPEN") +
+      (d.executed === false ? " PROPOSED · NOT EXECUTED" : " COMMANDED"),
+  );
   $("axes").replaceChildren();
   for (let a = 0; a < 3; a++) {
     const row = document.createElement("div");
@@ -84,13 +89,25 @@ function displayResult(r, rows) {
   );
   text(
     "outcome",
-    r.success
-      ? "Task completed"
-      : r.termination === "running"
-        ? "Running"
-        : r.termination === "error"
-          ? "Run error"
-          : "Task not completed",
+    r.termination === "error" || r.termination === "stopped"
+      ? r.termination === "stopped"
+        ? "Stopped by operator"
+        : "Run error"
+      : r.evaluation_mode === "query_only"
+        ? r.termination === "running"
+          ? "Querying Jev"
+          : "Query only · not executed"
+        : r.evaluation_mode === "custom_unscored"
+          ? r.termination === "running"
+            ? "Running · custom goal"
+            : "Custom goal · unscored"
+          : r.success
+            ? "Task completed"
+            : r.termination === "running"
+              ? "Running"
+              : r.termination === "error"
+                ? "Run error"
+                : "Task not completed",
   );
   $("outcome").classList.toggle("success", r.success);
 }
@@ -195,7 +212,7 @@ try {
   notice("Run catalog unavailable. Check the web server and reload.");
 }
 
-async function simulation(method = "GET", op = "status") {
+async function simulation(method = "GET", op = "status", settings) {
   const response = await fetch(
     "/api/simulation" + (method === "GET" ? `?op=${op}` : ""),
     {
@@ -204,7 +221,9 @@ async function simulation(method = "GET", op = "status") {
         "Content-Type": "application/json",
         "X-Demo-Key": $("access-key").value,
       },
-      ...(method === "POST" ? { body: JSON.stringify({ op }) } : {}),
+      ...(method === "POST"
+        ? { body: JSON.stringify({ op, ...(settings ? { settings } : {}) }) }
+        : {}),
     },
   );
   const data = await response.json();
@@ -212,7 +231,17 @@ async function simulation(method = "GET", op = "status") {
   return data;
 }
 function liveControls(active) {
-  $("start-live").disabled = active;
+  $("start-live").disabled = active || !tasks.length;
+  $("query-live").disabled = active || !tasks.length;
+  for (const id of [
+    "task-select",
+    "init-index",
+    "task-seed",
+    "call-budget",
+    "task-instruction",
+    "load-tasks",
+  ])
+    $(id).disabled = active || (id !== "load-tasks" && !tasks.length);
   $("stop-live").disabled = !active;
   $("run").disabled = active;
 }
@@ -246,7 +275,9 @@ async function pollLive() {
       if (state.error) notice(state.error);
       text(
         "video-note",
-        "Live run ended. The worker retains full video and JSON logs in its artifacts folder.",
+        state.result?.query_only
+          ? "Query complete. This is a proposed move; no Jev-selected movement was executed."
+          : "Live run ended. The worker retains full video and JSON logs in its artifacts folder.",
       );
     }
   } catch (e) {
@@ -277,13 +308,19 @@ function enterLive(smoke = false) {
   liveControls(true);
   text("source", smoke ? "● INSTALLATION CHECK — NO JEV" : "● LIVE SIMULATION");
 }
-async function startLive() {
-  $("start-live").disabled = true;
+async function startLive(op = "start") {
+  liveControls(true);
   notice("");
   try {
-    const state = await simulation("POST", "start");
+    const settings = taskSettings();
+    const state = await simulation("POST", op, settings);
     enterLive(state.smoke);
-    text("choice", "Starting simulator…");
+    if (op === "query") text("source", "● JEV QUERY · NO MOVEMENT");
+    text("task", settings.instruction || selectedTask().instruction);
+    text(
+      "choice",
+      op === "query" ? "Preparing Jev query…" : "Starting simulator…",
+    );
     text(
       "description",
       "Loading the pinned scene. Jev will choose each short movement.",
@@ -298,7 +335,9 @@ async function startLive() {
     $("outcome").classList.remove("success");
     text(
       "video-note",
-      "Live frames include model waiting time. One episode: at most 44 Jev requests / 220 simulation steps.",
+      op === "query"
+        ? "One fresh Jev call on the initial observation. Proposed actions are not executed."
+        : `Live frames include model waiting time. Budget: ${settings.max_calls} Jev requests / ${settings.max_calls * 5} physics steps.`,
     );
     text("worker-status", "Starting…");
     await pollLive();
@@ -310,11 +349,10 @@ async function startLive() {
 }
 $("live-toggle").disabled = false;
 $("live-toggle").onclick = () => {
-  $("live-panel").hidden = !$("live-panel").hidden;
-  if (!$("live-panel").hidden)
-    $("live-panel").scrollIntoView({ block: "nearest" });
+  $("live-panel").scrollIntoView({ block: "start", behavior: "smooth" });
 };
-$("start-live").onclick = startLive;
+$("start-live").onclick = () => startLive("start");
+$("query-live").onclick = () => startLive("query");
 $("stop-live").onclick = async () => {
   try {
     clearTimeout(pollTimer);
@@ -333,6 +371,85 @@ $("return-recording").onclick = () => {
   $("return-recording").hidden = true;
   loadRun($("run").value);
 };
+function selectedTask() {
+  return tasks.find(
+    (t) => `${t.suite}:${t.task_id}` === $("task-select").value,
+  );
+}
+function taskSettings() {
+  const t = selectedTask();
+  if (!t) throw Error("Connect to a worker and select a task first.");
+  for (const id of ["init-index", "task-seed", "call-budget"])
+    if (!$(id).checkValidity())
+      throw Error("Check initial state, seed and budget.");
+  return {
+    suite: t.suite,
+    task_id: t.task_id,
+    init_index: Number($("init-index").value),
+    seed: Number($("task-seed").value),
+    max_calls: Number($("call-budget").value),
+    instruction: $("task-instruction").value.trim(),
+  };
+}
+function showTask() {
+  const t = selectedTask();
+  if (!t) return;
+  $("task-instruction").value = t.instruction;
+  $("init-index").max = t.initial_states - 1;
+  $("init-index").value = 0;
+  taskScope();
+}
+function taskScope() {
+  const t = selectedTask();
+  if (!t) return;
+  const custom =
+    $("task-instruction").value.trim() &&
+    $("task-instruction").value.trim().toLowerCase() !==
+      t.instruction.toLowerCase();
+  text(
+    "task-scope",
+    custom
+      ? "Custom instruction · no automatic success score. Uses objects already present in this scene; stop when satisfied or let the budget finish."
+      : `Scene task · success checked by the simulator. ${t.initial_states} initial states available. Other tasks may exceed this controller's grasp capabilities.`,
+  );
+}
+async function loadTasks() {
+  $("load-tasks").disabled = true;
+  notice("");
+  try {
+    const data = await simulation("GET", "tasks");
+    tasks = data.tasks;
+    if (!tasks.length)
+      throw Error(
+        "No installed tasks. Download a supported suite on the worker.",
+      );
+    $("task-select").replaceChildren(
+      ...tasks.map(
+        (t) =>
+          new Option(
+            `${t.task_id}: ${t.instruction} (${t.suite})`,
+            `${t.suite}:${t.task_id}`,
+          ),
+      ),
+    );
+    $("task-select").disabled = false;
+    $("task-instruction").disabled = false;
+    showTask();
+    liveControls(false);
+    text(
+      "worker-status",
+      `${tasks.length} tasks ready · live Jev calls enabled`,
+    );
+  } catch (e) {
+    notice(e.message);
+    text("worker-status", "Worker connection needed for new tasks.");
+  } finally {
+    $("load-tasks").disabled = false;
+  }
+}
+$("task-select").onchange = showTask;
+$("task-instruction").oninput = taskScope;
+$("load-tasks").onclick = loadTasks;
 try {
   const config = await simulation("GET", "config");
   text(
@@ -341,8 +458,9 @@ try {
       ? "Worker available to connect"
       : "Playback only · configure a simulation worker for live runs",
   );
-  $("start-live").disabled = !config.configured;
+  $("load-tasks").disabled = !config.configured;
   $("access-key").parentElement.hidden = !config.requiresKey;
+  if (config.configured && !config.requiresKey) await loadTasks();
 } catch {
   text(
     "worker-status",

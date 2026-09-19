@@ -31,7 +31,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#c5d1e0}#ac
 const data=JSON.parse(document.querySelector('#data').textContent),r=data.result;
 const set=(id,text)=>document.getElementById(id).textContent=text;
 set('task',r.prompt);set('calls',r.calls);set('steps',r.steps);
-set('outcome',r.success?'Success':'Not completed');
+set('outcome',r.query_only?'Query only; no actions executed':r.evaluation_mode==='custom_unscored'?'Custom instruction; unscored':r.success?'Success':'Not completed');
 set('boundary',(r.metadata.privileged_observations?'Uses privileged simulator object poses. ':'Proprioception only. ')
 +'Experimental policy adapter; not an official miner score. Wall time: '+r.wall_seconds+' s.');
 const video=document.querySelector('video');

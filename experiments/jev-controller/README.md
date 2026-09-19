@@ -17,8 +17,28 @@ Start the live web worker from this directory after setup and asset download:
 ```
 
 The root Node app proxies to `http://127.0.0.1:8788`. Use a separate terminal for
-`npm start` at the repository root. The worker launches only the fixed demonstration
-scene, with 44 calls / 220 steps. For general task IDs use the CLI below.
+`npm start` at the repository root. The worker serves `GET /tasks` and accepts `POST /query` or `POST /start` with
+validated `suite`, `task_id`, `init_index`, `seed`, `instruction`, and `max_calls`
+settings. The web API wraps these in `{op, settings}`. Budgets are 1–80 calls.
+`POST /stop` cancels the active job. No client-supplied paths, URLs or shell commands
+are accepted. Each selected task must exist in the installed catalog.
+
+CLI equivalents for a new task and a custom query:
+
+```bash
+.venv/bin/python -m jev_robot.run_libero \
+  --libero-root third_party/LIBERO-PRO --assets-root third_party/pro-assets \
+  --suite libero_spatial_swap --task-id 2 --init-index 1 --seed 9 \
+  --observation-mode sim-oracle --action-set grounded --env-file ../../.env
+
+# Same flags, plus:
+# --instruction="Lift the black bowl and hold it raised" --query-only
+```
+
+Custom goals are unscored; `success` is null. The underlying scene predicate is
+logged separately as `environment_goal_reached`. Query-only runs return a proposed
+action and never execute that chunk. The public replay fixtures are historical,
+not automatically overwritten by new queries or runs.
 
 For a grounded websocket run, pass `--action-set grounded` to **both** the policy
 server and runner. The policy server still emits the same normalized OSC `(N,7)`

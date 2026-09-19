@@ -48,9 +48,9 @@ If the original app is still using port 4317:
 PORT=4318 npm start
 ```
 
-### Start a new live LIBERO run
+### Query Jev and run new tasks from the browser
 
-Terminal 1: `npm start` at the repository root. Terminal 2:
+Install the simulator once:
 
 ```bash
 cd experiments/jev-controller
@@ -58,24 +58,61 @@ bash setup.sh
 .venv/bin/python scripts/download_pro_assets.py \
   --suite libero_spatial_swap \
   --revision c86fc3b8293185a6f373677018ff3e37f8391602
+cd ../..
+```
+
+Set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in the ignored root `.env`.
+Then launch **both the web app and native worker with one command**:
+
+```bash
+npm run dev:live
+```
+
+Open **http://127.0.0.1:4318/**. Stop an older server using that port first, or use
+`PORT=4319 npm run dev:live`. Ctrl+C stops both processes and any active rollout.
+The worker uses port 8788; stop an older worker before launching the combined app.
+The simpler `npm start` still runs the web server only.
+
+The page lets you:
+
+1. **Choose a scene/task** from the worker's installed catalog. The default download
+   provides 10 spatial-swap tasks with 50 initial states each. Choose an initial
+   state and seed to vary the episode.
+2. **Edit the instruction** or retain the task's built-in goal. Text refers to
+   objects already in the selected scene; it does not generate new scenes or objects.
+3. **Query Jev**: initialize that scene, make one fresh Jev call and show its proposed
+   movement, probabilities and camera frame. No Jev-selected action is executed.
+4. **Run task**: initialize a fresh episode and let Jev choose/exercise movement
+   chunks, with live frames and feedback. A run repeats inference; it does not
+   replay the earlier query's answer. Configure 1–80 calls (default 44), five physics
+   steps per call. Stop at any time.
+
+A built-in task uses the simulator's original goal predicate for success. A changed
+instruction is labelled **Custom goal · unscored**, with `success: null`. Its
+`environment_goal_reached` field refers only to the original scene goal, never
+proof that the custom instruction succeeded. Custom runs continue until you stop
+or the call/step budget is reached. Query-only runs also have `success: null` and
+record `executed: false` on the proposed action.
+
+This is an experimental top-down grasp controller, not a guarantee that all
+catalog tasks or arbitrary instructions are solvable. Drawer manipulation and
+other actions outside its geometric menu may fail. Only Jev is queried; failures
+never switch models or replay recorded decisions.
+
+Setup requires Git and [uv](https://docs.astral.sh/uv/). It installs pinned Python
+3.11 simulator components; first startup may take a minute. On Linux, provide EGL
+or configure `MUJOCO_GL=osmesa` with its system libraries. No inference GPU or
+checkpoint is required. The native worker can also run independently:
+
+```bash
+cd experiments/jev-controller
 .venv/bin/python -m jev_robot.worker --env-file ../../.env
 ```
 
-Set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in the root `.env` first
-(the private file is ignored by Git). Setup requires Git and
-[uv](https://docs.astral.sh/uv/). It installs pinned Python 3.11 simulator
-components; initial simulator startup may take a minute while libraries compile.
-On Linux, provide a working EGL stack, or configure `MUJOCO_GL=osmesa` with its
-system libraries. No checkpoint or inference GPU is required.
-
-In the web page choose **Live simulation → Start 220-step run**. This spends at
-most 44 Jev calls on the same demonstration scene. The worker accepts one episode
-at a time. Frames, choices and success arrive from the real simulator. **Stop run**
-terminates the simulation; it does not substitute a fallback policy. Complete
-rollouts are retained under `experiments/jev-controller/artifacts/web-…/`.
-
-For direct CLI / OpenPI websocket usage and exact source pins, see the
-[controller README](experiments/jev-controller/README.md).
+Run artifacts stay under `experiments/jev-controller/artifacts/web-…/`. The catalog
+also discovers installed `libero_object_swap` and `libero_goal_swap` suites; download
+those with the same pinned asset script and restart the worker to expose them.
+For direct CLI / OpenPI websocket usage see the [controller README](experiments/jev-controller/README.md).
 
 ## Exactly what Jev chooses in the improved controller
 
@@ -128,7 +165,7 @@ values. The build copies only public assets and the required Three.js modules.
 It does not package the private `.env`, Python environment or simulator sources.
 
 **Playback works immediately with no environment variables.** Native MuJoCo runs
-outside the Vercel functions. To enable the live button on a hosted deployment:
+outside the Vercel functions. To enable browser task selection, querying and fresh rollouts on a hosted deployment:
 
 1. Run the Python worker on a machine with the pinned simulator installed. Export
    a random `SIMULATOR_TOKEN` of at least 24 characters, run it with
@@ -138,7 +175,7 @@ outside the Vercel functions. To enable the live button on a hosted deployment:
    - `SIMULATOR_URL`: the worker's HTTPS origin (no path or credentials).
    - `SIMULATOR_TOKEN`: the same worker secret.
    - `DEMO_ACCESS_KEY`: a separate random string of at least 24 characters.
-3. Enter **only the demo access key** in the page to start/stop live episodes.
+3. Enter **only the demo access key** in the page, then click **Connect / refresh tasks**. Select, query, run and stop tasks entirely from the page.
    Cloudflare credentials stay on the worker. The browser never receives them.
 
 For the older `/index.html` workcell's live inference, additionally set

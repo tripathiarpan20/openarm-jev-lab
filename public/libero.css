@@ -525,3 +525,55 @@ footer a {
     transition: background 0.15s;
   }
 }
+
+#live-panel {
+  margin: 0 0 24px;
+}
+.task-form {
+  display: grid;
+  grid-template-columns: minmax(240px, 3fr) repeat(3, minmax(75px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.task-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+#live-panel .task-form input,
+#live-panel .task-form select {
+  width: 100%;
+  margin: 0;
+  min-width: 0;
+  padding: 10px;
+}
+.instruction-label {
+  display: block;
+  margin: 14px 0 7px;
+}
+#task-instruction {
+  width: 100%;
+  resize: vertical;
+  min-height: 64px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  font: 13px inherit;
+}
+.live-controls {
+  flex-wrap: wrap;
+}
+#task-scope {
+  margin: 8px 0 14px;
+  font-size: 11px;
+}
+@media (max-width: 700px) {
+  .task-form {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .task-form label:first-child {
+    grid-column: 1/-1;
+  }
+}

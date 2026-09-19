@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env server.mjs",
     "test": "node --test test/*.test.mjs",
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "dev:live": "node --env-file-if-exists=.env scripts/live.mjs"
   },
   "dependencies": {
     "three": "0.180.0"

@@ -32,13 +32,91 @@
           >
         </div>
       </div>
+      <section id="live-panel">
+        <div>
+          <p class="eyebrow">NEW TASK / LIVE JEV</p>
+          <h2>What should the arm do?</h2>
+          <p>
+            Choose an installed scene, then use its task or write your own
+            instruction. Query once or run a fresh simulation.
+          </p>
+        </div>
+        <div class="task-form">
+          <label
+            >Scene / task
+            <select id="task-select" disabled>
+              <option>Connect to load installed tasks</option>
+            </select></label
+          >
+          <label
+            >Initial state
+            <input
+              id="init-index"
+              type="number"
+              min="0"
+              max="0"
+              value="0"
+              step="1"
+          /></label>
+          <label
+            >Seed
+            <input
+              id="task-seed"
+              type="number"
+              min="0"
+              max="2147483647"
+              value="7"
+              step="1"
+          /></label>
+          <label
+            >Call budget
+            <input
+              id="call-budget"
+              type="number"
+              min="1"
+              max="80"
+              value="44"
+              step="1"
+          /></label>
+        </div>
+        <label class="instruction-label" for="task-instruction"
+          >Instruction</label
+        ><textarea
+          id="task-instruction"
+          rows="2"
+          maxlength="1600"
+          placeholder="Load a scene, then enter what you want Jev to do."
+          disabled
+        ></textarea>
+        <p id="task-scope">
+          Instructions refer to objects in the selected scene. This does not
+          create new objects or environments.
+        </p>
+        <label id="access-key-label"
+          >Demo access key
+          <input
+            id="access-key"
+            type="password"
+            autocomplete="off"
+            placeholder="Required only on a hosted demo"
+        /></label>
+        <div class="live-controls">
+          <button id="load-tasks">Connect / refresh tasks</button
+          ><button id="query-live" disabled>Query Jev · 1 call</button
+          ><button id="start-live" class="primary" disabled>Run task</button
+          ><button id="stop-live" disabled>Stop</button
+          ><button id="reconnect" hidden>Reconnect</button
+          ><button id="return-recording" hidden>Return to recording</button
+          ><span id="worker-status" role="status">Checking worker…</span>
+        </div>
+      </section>
       <div class="toolbar">
         <label for="run">Experiment</label
         ><select id="run" disabled>
           <option>Loading recordings…</option></select
         ><span id="outcome" class="pill">Loading</span>
         <div class="toolbar-right">
-          <button id="live-toggle" disabled>Live simulation ↗</button
+          <button id="live-toggle" disabled>New task ↑</button
           ><a
             id="result-link"
             href="/runs/baseline/result.json"
@@ -132,31 +210,6 @@
           <div><span>Simulation steps</span><strong id="steps">—</strong></div>
           <div><span>Median request</span><strong id="median">—</strong></div>
           <div><span>Wall time</span><strong id="wall">—</strong></div>
-        </div>
-      </section>
-      <section id="live-panel" hidden>
-        <div>
-          <p class="eyebrow">NEW RUN / REAL PHYSICS</p>
-          <h2>Let Jev try again.</h2>
-          <p>
-            Runs the improved controller in a separate MuJoCo service. Every
-            movement calls Jev; no recorded answers are reused.
-          </p>
-        </div>
-        <label
-          >Demo access key
-          <input
-            id="access-key"
-            type="password"
-            autocomplete="off"
-            placeholder="Required only on a hosted demo"
-        /></label>
-        <div class="live-controls">
-          <button id="start-live" class="primary">Start 220-step run</button
-          ><button id="stop-live" disabled>Stop run</button
-          ><button id="reconnect" hidden>Reconnect</button
-          ><button id="return-recording" hidden>Return to recording</button
-          ><span id="worker-status">Checking worker…</span>
         </div>
       </section>
       <footer>

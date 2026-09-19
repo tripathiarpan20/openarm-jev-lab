@@ -15,15 +15,66 @@ export default async function handler(req, res) {
     return json(res, 503, {
       error: "Live worker not configured. Recordings work without a worker.",
     });
-  let op = "status";
+  let op = url.searchParams.get("op") || "status",
+    settings;
+  if (req.method === "GET" && !["status", "tasks"].includes(op))
+    return json(res, 400, { error: "Unknown read operation" });
   if (req.method === "POST") {
     try {
-      const body = await readBody(req, 512);
+      const body = await readBody(req, 8000);
       op = body.op;
-      if (!["start", "stop"].includes(op) || Object.keys(body).length !== 1)
+      if (
+        !["start", "query", "stop"].includes(op) ||
+        Object.keys(body).some((k) => !["op", "settings"].includes(k))
+      )
+        throw Error();
+      settings = body.settings ?? {};
+      if (op === "stop" && body.settings !== undefined) throw Error();
+      if (
+        !settings ||
+        typeof settings !== "object" ||
+        Array.isArray(settings) ||
+        Object.keys(settings).some(
+          (k) =>
+            ![
+              "suite",
+              "task_id",
+              "init_index",
+              "seed",
+              "instruction",
+              "max_calls",
+            ].includes(k),
+        )
+      )
+        throw Error();
+      for (const [k, low, high] of [
+        ["task_id", 0, 1000],
+        ["init_index", 0, 100000],
+        ["seed", 0, 2147483647],
+        ["max_calls", 1, 80],
+      ]) {
+        if (
+          settings[k] !== undefined &&
+          (!Number.isInteger(settings[k]) ||
+            settings[k] < low ||
+            settings[k] > high)
+        )
+          throw Error();
+      }
+      if (
+        settings.suite !== undefined &&
+        !/^libero_(spatial|object|goal)_swap$/.test(settings.suite)
+      )
+        throw Error();
+      if (
+        settings.instruction !== undefined &&
+        (typeof settings.instruction !== "string" ||
+          settings.instruction.length > 1600 ||
+          settings.instruction.includes("\0"))
+      )
         throw Error();
     } catch {
-      return json(res, 400, { error: "Expected start or stop operation" });
+      return json(res, 400, { error: "Invalid task settings or operation" });
     }
   }
   let target;
@@ -54,20 +105,28 @@ export default async function handler(req, res) {
       method: req.method,
       headers: {
         "X-Jev-Lab": "simulation-proxy",
+        "Content-Type": "application/json",
         ...(process.env.SIMULATOR_TOKEN
           ? { Authorization: `Bearer ${process.env.SIMULATOR_TOKEN}` }
           : {}),
       },
+      ...(req.method === "POST" ? { body: JSON.stringify(settings) } : {}),
       signal: AbortSignal.timeout(15000),
       redirect: "error",
     });
     if (!response.ok)
-      return json(res, response.status === 409 ? 409 : 502, {
-        error:
-          response.status === 409
-            ? "A simulation is already running."
-            : "The simulator worker rejected the request.",
-      });
+      return json(
+        res,
+        [400, 409].includes(response.status) ? response.status : 502,
+        {
+          error:
+            response.status === 409
+              ? "A simulation is already running."
+              : response.status === 400
+                ? "Invalid settings for the installed task."
+                : "The simulator worker rejected the request.",
+        },
+      );
     return json(res, 200, await response.json());
   } catch {
     return json(res, 502, {

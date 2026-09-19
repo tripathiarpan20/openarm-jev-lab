@@ -1,7 +1,7 @@
 """Single-episode HTTP worker. Native MuJoCo runs here, never in Vercel.
 
-Only fixed simulator arguments are accepted; no paths, prompts, shell commands or
-URLs come from the browser. Bind loopback locally; require a secret off loopback.
+Validated task IDs, instructions and bounded budgets are accepted; paths, shell
+commands and URLs never come from the browser. Bind loopback locally; require a secret off loopback.
 """
 import argparse
 import base64
@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import uuid
+from .tasks import catalog, validate_request
 
 
 class Worker:
@@ -23,8 +24,19 @@ class Worker:
         self.out = None
         self.stopped = False
         self.lock = threading.RLock()
+        self._tasks = None
 
-    def start(self):
+    def tasks(self):
+        with self.lock:
+            if self._tasks is None:
+                self._tasks = catalog(self.args.libero_root, self.args.assets_root)
+            return self._tasks
+
+    def start(self, settings=None, query_only=False):
+        try:
+            settings = validate_request(settings or {}, self.tasks())
+        except ValueError as exc:
+            return 400, {"error": str(exc)}
         with self.lock:
             if self.process and self.process.poll() is None:
                 return 409, {"error": "A simulation is already running"}
@@ -32,9 +44,14 @@ class Worker:
             # The runner creates the unique output directory, so keep logs outside.
             self.out.parent.mkdir(parents=True, exist_ok=True)
             command = [sys.executable, "-m", "jev_robot.run_libero", "--libero-root", self.args.libero_root,
-                       "--assets-root", self.args.assets_root, "--suite", "libero_spatial_swap", "--task-id", "0",
-                       "--init-index", "0", "--seed", "7", "--observation-mode", "sim-oracle",
-                       "--action-set", "grounded", "--max-calls", "44", "--max-steps", "220", "--output", str(self.out)]
+                       "--assets-root", self.args.assets_root, "--suite", settings["suite"], "--task-id", str(settings["task_id"]),
+                       "--init-index", str(settings["init_index"]), "--seed", str(settings["seed"]), "--observation-mode", "sim-oracle",
+                       "--action-set", "grounded", "--max-calls", str(1 if query_only else settings["max_calls"]),
+                       "--max-steps", str(settings["max_calls"] * 5), "--output", str(self.out)]
+            if settings["instruction"]:
+                command += ["--instruction=" + settings["instruction"]]
+            if query_only:
+                command += ["--query-only"]
             if self.args.env_file:
                 command += ["--env-file", self.args.env_file]
             if self.args.sim_smoke:
@@ -42,7 +59,7 @@ class Worker:
             self.stopped = False
             with self.out.with_suffix(".log").open("wb") as log:
                 self.process = subprocess.Popen(command, cwd=Path(__file__).resolve().parents[1], stdout=log, stderr=log)
-            return 202, {"status": "starting", "run_id": self.out.name, "smoke": self.args.sim_smoke}
+            return 202, {"status": "starting", "run_id": self.out.name, "smoke": self.args.sim_smoke, "query_only": query_only, "settings": settings}
 
     def stop(self):
         with self.lock:
@@ -73,7 +90,7 @@ class Worker:
                 value["status"] = "stopped" if self.stopped else "error"
                 value["error"] = "Stopped by operator" if self.stopped else "Simulator failed; inspect the worker's local log"
                 if "result" in value:
-                    value["result"] = {**value["result"], "termination": value["status"], "success": False}
+                    value["result"] = {**value["result"], "termination": value["status"], "success": False if value["result"].get("evaluation_mode", "environment_goal") == "environment_goal" else None}
             try:
                 lines = (self.out / "decisions.jsonl").read_text().splitlines()
                 value["decisions"] = []
@@ -113,6 +130,8 @@ def handler_for(worker, token):
         def do_GET(self):
             if not self.authorized():
                 return self.respond(403, {"error": "Forbidden"})
+            if self.path == "/tasks":
+                return self.respond(200, {"tasks": worker.tasks(), "max_calls": 80})
             if self.path != "/status":
                 return self.respond(404, {"error": "Not found"})
             self.respond(200, worker.snapshot())
@@ -120,8 +139,17 @@ def handler_for(worker, token):
         def do_POST(self):
             if not self.authorized():
                 return self.respond(403, {"error": "Forbidden"})
-            if self.path == "/start":
-                status, value = worker.start()
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 <= length <= 8000:
+                    raise ValueError()
+                data = json.loads(self.rfile.read(length)) if length else {}
+                if not isinstance(data, dict):
+                    raise ValueError()
+            except (ValueError, UnicodeError):
+                return self.respond(400, {"error": "Invalid JSON settings"})
+            if self.path in ("/start", "/query"):
+                status, value = worker.start(data, query_only=self.path == "/query")
             elif self.path == "/stop":
                 status, value = worker.stop()
             else:

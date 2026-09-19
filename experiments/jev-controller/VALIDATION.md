@@ -1,3 +1,36 @@
+# Browser task controls validation
+
+2026-09-19 follow-up on the same feature branch:
+
+- Catalog: 10 installed `libero_spatial_swap` tasks, each exposing 50 initial states.
+  Task IDs are taken from the pinned benchmark declaration order, not sorted filenames.
+- **Query-only**: task 3, initial state 1, seed 9, custom instruction. Live Jev returned
+  `akita_black_bowl_1__above`; 1 model call, **0 executed action steps**,
+  `executed: false`, `termination: query_complete`, `success: null`.
+  Local artifact: `web-9c53f9598fe84035bef6130d49f8e721`.
+- **New built-in task**: task 2 (table centre), initial state 0, seed 7. Started
+  through the web API; simulator success in **22 calls / 108 steps**.
+  Local artifact: `web-ce664bd12c92403f88e5e7cdbe0b7236`.
+- **Custom execution**: task 2, initial state 1, seed 9, instruction to lift and
+  keep the bowl raised. Selected budget 2 calls; exactly **2 calls / 10 executed
+  steps**, `evaluation_mode: custom_unscored`, `success: null`.
+  This checks instruction/budget plumbing, not successful completion of that goal.
+  Local artifact: `web-2943e6fc85154363a751c5aad92be802`.
+
+All used live `typesafe/jev`, with actual MuJoCo physics for executed actions.
+Custom goals do not inherit the environment's original success predicate. A
+regression test verifies the controller continues even if that original predicate
+becomes true during a custom run. Catalog/request validation prevents arbitrary
+paths or commands; instruction text is passed as a single argument without a shell.
+The recorded query still performs the normal scene initialization/stabilization;
+zero steps here means zero **Jev-selected** action steps.
+
+Checks: 13 Node tests, 31 Python tests, and the production build. HTTP/API checks
+were performed; no browser interaction/visual QA or hosted Vercel deployment is
+claimed. Existing playback fixtures are retained without modification.
+
+---
+
 # Geometry-aware controller and web demo validation
 
 2026-09-19; branch `arpan/jev-openroboto-web-demo` in `openarm-jev-lab`.

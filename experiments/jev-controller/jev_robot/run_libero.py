@@ -119,6 +119,8 @@ def main():
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--observation-mode", choices=("sim-oracle", "proprio"), required=True)
     p.add_argument("--env-file")
+    p.add_argument("--instruction", default="", help="Override instruction; a changed goal is explicitly unscored")
+    p.add_argument("--query-only", action="store_true", help="Ask Jev once without executing its proposed actions")
     p.add_argument("--max-calls", type=int, default=40)
     p.add_argument("--action-set", choices=("discrete", "grounded"), default="discrete")
     p.add_argument("--horizon", type=int, default=5)
@@ -152,7 +154,10 @@ def main():
     env.seed(args.seed)
     env.reset()
     obs = env.set_init_state(states[args.init_index])
-    prompt = str(env.language_instruction)  # Correct for language/goal perturbations.
+    environment_instruction = str(env.language_instruction)
+    from .tasks import scoring_mode, observe_goal
+    evaluation_mode = scoring_mode(args.instruction, environment_instruction, args.query_only)
+    prompt = args.instruction.strip() or environment_instruction
     for _ in range(10):
         obs, _, _, _ = env.step([0.] * 6 + [-1.])
     policy = None
@@ -175,11 +180,13 @@ def main():
     result = {"experimental": True, "official_benchmark_comparable": False,
               "metadata": metadata, "libero_pro_revision": revision,
               "controller_source_sha256": {name: hashlib.sha256((Path(__file__).parent / name).read_bytes()).hexdigest()
-                  for name in ("actions.py", "grounded.py", "policy.py", "cloudflare.py", "run_libero.py")},
+                  for name in ("actions.py", "grounded.py", "policy.py", "cloudflare.py", "run_libero.py", "tasks.py")},
               "suite": args.suite,
               "task_id": args.task_id, "task_name": task.name, "prompt": prompt,
+              "environment_instruction": environment_instruction, "evaluation_mode": evaluation_mode,
+              "environment_goal_reached": False, "query_only": args.query_only,
               "seed": args.seed, "init_index": args.init_index, "steps": 0, "calls": 0,
-              "success": False, "termination": "step_limit", "error": None,
+              "success": False if evaluation_mode == "environment_goal" else None, "termination": "step_limit", "error": None,
               "horizon": args.horizon, "max_steps": args.max_steps, "max_calls": args.max_calls}
     start = time.monotonic()
     writer = imageio.get_writer(out / "rollout.mp4", fps=20, codec="libx264", quality=8)
@@ -214,12 +221,16 @@ def main():
                               "state": packet["observation/state"].tolist(),
                               "scene": packet.get("observation/scene"),
                               "jev": response["jev"], "timing": response["server_timing"],
-                              "actions": response["actions"].tolist()}
+                              "actions": response["actions"].tolist(), "executed": not args.query_only}
                     log.write(json.dumps(record) + "\n")
                     log.flush()
                     print("call=%d action=%s confidence=%.3f latency_ms=%.1f" %
                           (result["calls"], response["jev"]["choice"], response["jev"]["confidence"],
                            response["server_timing"]["infer_ms"]), flush=True)
+                if args.query_only:
+                    result["termination"] = "query_complete"
+                    publish_frame()
+                    break
                 actions = np.asarray(response["actions"], dtype=float)
                 if actions.ndim != 2 or actions.shape[1] != 7 or not np.isfinite(actions).all() or np.abs(actions).max() > 1:
                     raise JevError("Malformed action chunk")
@@ -227,9 +238,7 @@ def main():
                     writer.append_data(np.ascontiguousarray(obs["agentview_image"][::-1]))
                     obs, _, done, _ = env.step(action.tolist())
                     result["steps"] += 1
-                    if done:
-                        result["success"] = True
-                        result["termination"] = "simulator_success"
+                    if observe_goal(result, done):
                         break
                     if result["steps"] >= args.max_steps:
                         break

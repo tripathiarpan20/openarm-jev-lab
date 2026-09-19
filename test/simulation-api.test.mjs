@@ -131,3 +131,59 @@ test("legacy workcell function also requires the hosted demo key before model in
     Object.assign(process.env, old);
   }
 });
+
+test("forwards task catalog and query settings while rejecting unexpected task fields", async () => {
+  const old = { ...process.env },
+    original = globalThis.fetch;
+  let sent;
+  try {
+    delete process.env.VERCEL;
+    delete process.env.DEMO_ACCESS_KEY;
+    process.env.SIMULATOR_URL = "http://127.0.0.1:8788";
+    globalThis.fetch = async (url, options) => {
+      sent = { url: String(url), options };
+      return { ok: true, json: async () => ({ tasks: [] }) };
+    };
+    await invoke(simulation, { url: "/api/simulation?op=tasks" });
+    assert.equal(sent.url, "http://127.0.0.1:8788/tasks");
+    const settings = {
+      suite: "libero_spatial_swap",
+      task_id: 3,
+      init_index: 1,
+      seed: 9,
+      instruction: "Move the other bowl",
+      max_calls: 2,
+    };
+    assert.equal(
+      (
+        await invoke(simulation, {
+          method: "POST",
+          body: { op: "query", settings },
+        })
+      ).status,
+      200,
+    );
+    assert.equal(sent.url, "http://127.0.0.1:8788/query");
+    assert.deepEqual(JSON.parse(sent.options.body), settings);
+    for (const bad of [
+      { ...settings, max_calls: 81 },
+      { ...settings, command: "ls" },
+      { ...settings, task_id: true },
+      { ...settings, instruction: "a".repeat(1601) },
+    ])
+      assert.equal(
+        (
+          await invoke(simulation, {
+            method: "POST",
+            body: { op: "start", settings: bad },
+          })
+        ).status,
+        400,
+      );
+  } finally {
+    globalThis.fetch = original;
+    for (const k of Object.keys(process.env))
+      if (!(k in old)) delete process.env[k];
+    Object.assign(process.env, old);
+  }
+});
