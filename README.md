@@ -1,9 +1,226 @@
-# OpenArm × Jev — Autonomous Lab
+# Jev / Motion Lab
 
-A local, interactive robot workcell. Give the arm a natural-language mission;
-**Cloudflare `typesafe/jev`** selects each pick-and-place action from the current
-structured scene. Seven-axis inverse kinematics drives the visual arm. No other
-model, prerecorded model response, or rule-based decision fallback is used.
+A Vercel-deployable web demo of **Jev controlling a real LIBERO MuJoCo simulation**.
+Inspect actual recorded runs, step through Jev's choices, or start a new run through
+a native simulation worker. **Only `typesafe/jev` is used as the learned policy.**
+
+The earlier [OpenArm kinematic workcell](#demo-recording) remains available at
+`/index.html`. The new LIBERO experiment opens at `/`.
+
+## What improved
+
+Same `libero_spatial_swap` task 0, initial state 0, seed 7, five-step action chunks,
+and maximum 220 physics steps:
+
+| Recorded development run | Task completed | Jev calls | Physics steps | Median request | Rollout wall time |
+| --- | --- | --- | --- | --- | --- |
+| Original fixed directions | No | 44 | 220 | 604 ms | 36.6 s |
+| Improved geometry-aware choices | **Yes** | **35** | **173** | **440 ms** | **26.0 s** |
+| Same controller through live web API | **Yes** | **21** | **103** | **454 ms** | **16.5 s** |
+
+The simulator reported success after Jev grasped the bowl, moved it over the plate,
+and selected release. These are individual development runs on the same scene,
+not a benchmark success rate. Several intermediate revisions failed. Latency is
+observed per request, not a guaranteed model speedup. See
+[experiment validation](experiments/jev-controller/VALIDATION.md).
+
+**The important boundary:** this prototype uses privileged object poses, collision
+bounds and contacts from the simulator. It does not interpret camera images and
+is not an eligible downloadable OpenRoboto miner checkpoint. The adapter retains
+OpenPI's binary websocket protocol and normalized `(N, 7)` OSC action chunks;
+these are not physical xArm joint deltas.
+
+## Launch the web demo
+
+```bash
+npm ci
+npm start
+```
+
+Open **http://127.0.0.1:4317/**. Recordings require no Cloudflare key, Python,
+GPU, or robot. Play, scrub, compare the runs, and use **Next choice** to inspect
+what Jev commanded. Videos show physics time at 20 Hz; API waits are excluded.
+The wall-time and request metrics show the actual inference cost in time.
+
+If the original app is still using port 4317:
+
+```bash
+PORT=4318 npm start
+```
+
+### Query Jev and run new tasks from the browser
+
+Install the simulator once:
+
+```bash
+cd experiments/jev-controller
+bash setup.sh
+.venv/bin/python scripts/download_pro_assets.py \
+  --suite libero_spatial_swap \
+  --revision c86fc3b8293185a6f373677018ff3e37f8391602
+cd ../..
+```
+
+Set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in the ignored root `.env`.
+Then launch **both the web app and native worker with one command**:
+
+```bash
+npm run dev:live
+```
+
+Open **http://127.0.0.1:4318/**. Stop an older server using that port first, or use
+`PORT=4319 npm run dev:live`. Ctrl+C stops both processes and any active rollout.
+The worker uses port 8788; stop an older worker before launching the combined app.
+The simpler `npm start` still runs the web server only.
+
+The page lets you:
+
+1. **Choose a scene/task** from the worker's installed catalog. The default download
+   provides 10 spatial-swap tasks with 50 initial states each. Choose an initial
+   state and seed to vary the episode.
+2. **Edit the instruction** or retain the task's built-in goal. Text refers to
+   objects already in the selected scene; it does not generate new scenes or objects.
+3. **Query Jev**: initialize that scene, make one fresh Jev call and show its proposed
+   movement, probabilities and camera frame. No Jev-selected action is executed.
+4. **Run task**: initialize a fresh episode and let Jev choose/exercise movement
+   chunks, with live frames and feedback. A run repeats inference; it does not
+   replay the earlier query's answer. Configure 1–80 calls (default 44), five physics
+   steps per call. Stop at any time.
+
+A built-in task uses the simulator's original goal predicate for success. A changed
+instruction is labelled **Custom goal · unscored**, with `success: null`. Its
+`environment_goal_reached` field refers only to the original scene goal, never
+proof that the custom instruction succeeded. Custom runs continue until you stop
+or the call/step budget is reached. Query-only runs also have `success: null` and
+record `executed: false` on the proposed action.
+
+This is an experimental top-down grasp controller, not a guarantee that all
+catalog tasks or arbitrary instructions are solvable. Drawer manipulation and
+other actions outside its geometric menu may fail. Only Jev is queried; failures
+never switch models or replay recorded decisions.
+
+Setup requires Git and [uv](https://docs.astral.sh/uv/). It installs pinned Python
+3.11 simulator components; first startup may take a minute. On Linux, provide EGL
+or configure `MUJOCO_GL=osmesa` with its system libraries. No inference GPU or
+checkpoint is required. The native worker can also run independently:
+
+```bash
+cd experiments/jev-controller
+.venv/bin/python -m jev_robot.worker --env-file ../../.env
+```
+
+Run artifacts stay under `experiments/jev-controller/artifacts/web-…/`. The catalog
+also discovers installed `libero_object_swap` and `libero_goal_swap` suites; download
+those with the same pinned asset script and restart the worker to expose them.
+For direct CLI / OpenPI websocket usage see the [controller README](experiments/jev-controller/README.md).
+
+## Exactly what Jev chooses in the improved controller
+
+Every call supplies the current instruction, measured robot/object geometry,
+finger contacts, and recent observations. Code constructs a task-independent menu;
+**Jev selects one whole action**. It never emits arbitrary code or free-form
+joint coordinates.
+
+| Choice | What the selected short chunk does |
+| --- | --- |
+| `hold`, `open`, `lift` | Keep still, open fingers, or move upward with the current grip. |
+| `<object>__above` | Approach above that object's grasp point, or carry a held object above that destination. |
+| `<object>__grasp` | Approach its geometry-derived grasp point with fingers open. Wide objects use an offset along the measured finger-closing axis. |
+| `<object>__grip` | Close in place. Offered only near its grasp point. |
+| `<object>__lift` | Move upward with fingers closed when both fingers contact that object. |
+| `<destination>__place` | Move the held object toward that support, accounting for the observed hand-to-object offset. |
+| `<destination>__release` | Open in place when the held object is within 2.5 cm of the placement target. |
+
+Already-reached movements and re-grasping an already-held object are omitted.
+Availability depends on measured geometry; code does not parse the instruction
+or choose the task's target/destination. The menu stays below Jev's 255-choice
+limit. The original **195-direction** policy is retained as `--action-set discrete`.
+
+The geometric decoder scales the selected positional error into normalized OSC
+translation commands, caps each axis at ±0.8, and repeats the vector for at most
+five steps. Rotations remain zero in the improved menu; this assumes a roughly
+vertical gripper with a horizontal closing axis. Gripper commands are −1/open or
++1/close. A movement is not a completed skill: Jev must choose again after every
+chunk. Grasp and placement are physical contacts, never object attachment or
+teleportation. Runtime failures stop the episode. This demonstration is not a
+collision-certified or general-purpose robot controller.
+
+## Deploy to Vercel
+
+Deploy the repository root from branch **`arpan/jev-openroboto-web-demo`**.
+`vercel.json` configures the static build and the three Node API functions.
+
+```bash
+npm run build
+# From this feature branch, with your Vercel account authenticated:
+npx vercel
+# When ready to publish the reviewed deployment:
+npx vercel --prod
+```
+
+Or push this branch and import the GitHub repository in Vercel. Select **Other**,
+Node **22.x**, build command **`npm run build`**, output directory **`dist`**,
+and the repository root. The supplied configuration already sets these build
+values. The build copies only public assets and the required Three.js modules.
+It does not package the private `.env`, Python environment or simulator sources.
+
+**Playback works immediately with no environment variables.** Native MuJoCo runs
+outside the Vercel functions. To enable browser task selection, querying and fresh rollouts on a hosted deployment:
+
+1. Run the Python worker on a machine with the pinned simulator installed. Export
+   a random `SIMULATOR_TOKEN` of at least 24 characters, run it with
+   `--host 0.0.0.0`, and place it behind an authenticated HTTPS reverse proxy.
+   The worker itself verifies `Authorization: Bearer <SIMULATOR_TOKEN>`.
+2. Set these private Vercel environment variables, then redeploy:
+   - `SIMULATOR_URL`: the worker's HTTPS origin (no path or credentials).
+   - `SIMULATOR_TOKEN`: the same worker secret.
+   - `DEMO_ACCESS_KEY`: a separate random string of at least 24 characters.
+3. Enter **only the demo access key** in the page, then click **Connect / refresh tasks**. Select, query, run and stop tasks entirely from the page.
+   Cloudflare credentials stay on the worker. The browser never receives them.
+
+For the older `/index.html` workcell's live inference, additionally set
+`CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in Vercel. Its calls use the
+same demo-access-key gate. No credentials are needed for reading recorded runs.
+Do not treat the demo key as per-user authentication or a global spending quota;
+anyone you share it with can request further bounded episodes.
+
+Implementation follows [Vercel's Node function convention](https://vercel.com/docs/functions/runtimes/node-js)
+and [project configuration](https://vercel.com/docs/project-configuration).
+The production bundle has been built locally; no Vercel deployment is claimed.
+
+## Reproduce and add a recording
+
+```bash
+cd experiments/jev-controller
+.venv/bin/python -m jev_robot.run_libero \
+  --libero-root third_party/LIBERO-PRO --assets-root third_party/pro-assets \
+  --suite libero_spatial_swap --task-id 0 --init-index 0 --seed 7 \
+  --observation-mode sim-oracle --action-set grounded --env-file ../../.env \
+  --max-calls 44 --max-steps 220 --output artifacts/my-run
+cd ../..
+node scripts/export-run.mjs experiments/jev-controller/artifacts/my-run my-run "My measured run"
+npm run build
+```
+
+Each run has a video, actual decision trace and simulator result. New runs also
+record controller-source hashes. Do not edit success flags or invent missing
+frames. The bundled comparison MP4s are each under 0.4 MB and intentionally
+included as small demo fixtures. Large personal recordings in `demo/` remain
+ignored as before.
+
+## Tests
+
+```bash
+npm test
+npm run build
+cd experiments/jev-controller
+.venv/bin/python -m pytest -q
+```
+
+The OpenArm submodule remains pinned at its existing commit. Python dependencies,
+run outputs and `.env` files stay outside Git. No model substitution was added.
+
+---
 
 ## Demo recording
 
@@ -26,7 +243,7 @@ npm ci
 npm start
 ```
 
-Open **http://127.0.0.1:4317**, choose **Quality sort**, and click **Start mission**.
+Open **http://127.0.0.1:4317/index.html**, choose **Quality sort**, and click **Start mission**.
 Stop the server with **Ctrl+C** in its terminal. On subsequent launches, `npm start`
 is enough unless dependencies have changed. If port 4317 is already in use by a
 running copy, open that address or stop the earlier server before launching again.

@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decide, validateScene } from './jev.mjs';
+import { authorize } from './lib/http.mjs';
+import simulationHandler from './api/simulation.js';
 import { MODEL } from './public/world.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -12,16 +14,18 @@ const configured = !!token && /^[a-f\d]{32}$/i.test(accountId ?? '');
 const port = Number(process.env.PORT || 4317);
 let busy = false;
 let lastCall = 0;
-const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
+const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.jsonl': 'application/x-ndjson', '.mp4': 'video/mp4', '.png': 'image/png' };
 const server = http.createServer(async (req, res) => {
   const headers = { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
     'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'" };
   function json(status, value) { res.writeHead(status, { ...headers, 'Content-Type': 'application/json' }); res.end(JSON.stringify(value)); }
   if (![ `127.0.0.1:${port}`, `localhost:${port}` ].includes(req.headers.host)) return json(403, { error: 'Local access only.' });
   const pathname = new URL(req.url, `http://127.0.0.1:${port}`).pathname;
-  if (req.method === 'GET' && pathname === '/api/status') return json(200, { model: MODEL, configured,
+  if (pathname === '/api/simulation') return simulationHandler(req,res);
+  if (req.method === 'GET' && pathname === '/api/status') return json(200, { model: MODEL, configured, requiresKey: Boolean(process.env.DEMO_ACCESS_KEY),
     message: configured ? 'Jev is configured. Each decision calls Cloudflare.' : 'Waiting for CLOUDFLARE_ACCOUNT_ID in the server .env file.' });
   if (req.method === 'POST' && pathname === '/api/decide') {
+    if (!authorize(req,res)) return;
     if (req.headers.origin && ![`http://127.0.0.1:${port}`, `http://localhost:${port}`].includes(req.headers.origin)) return json(403, { error: 'Origin not allowed.' });
     if (!req.headers['content-type']?.startsWith('application/json')) return json(415, { error: 'JSON required.' });
     if (!configured) return json(503, { error: 'Add your Cloudflare account ID to the server .env file, then restart. No model call was made.' });
@@ -50,9 +54,15 @@ const server = http.createServer(async (req, res) => {
   else if (pathname === '/vendor/three.core.js') file = path.join(root, 'node_modules/three/build/three.core.js');
   else if (pathname === '/vendor/OrbitControls.js') file = path.join(root, 'node_modules/three/examples/jsm/controls/OrbitControls.js');
   else if (pathname === '/vendor/RoundedBoxGeometry.js') file = path.join(root, 'node_modules/three/examples/jsm/geometries/RoundedBoxGeometry.js');
-  else if (/^\/[a-zA-Z0-9_-]+\.(html|js|css|svg)$/.test(pathname) || pathname === '/') file = path.join(root, 'public', pathname === '/' ? 'index.html' : pathname.slice(1));
+  else if (/^\/[a-zA-Z0-9_-]+\.(html|js|css|svg)$/.test(pathname) || pathname === '/') file = path.join(root, 'public', pathname === '/' ? 'libero.html' : pathname.slice(1));
+  if (/^\/runs\/[a-z0-9-]+\/(result\.json|trace\.json|decisions\.jsonl|rollout\.mp4|final\.png)$/.test(pathname) || pathname === '/runs/manifest.json') file = path.join(root, 'public', pathname.slice(1));
   if (!file) return json(404, { error: 'Not found.' });
-  try { const data = await readFile(file); res.writeHead(200, { ...headers, 'Content-Type': mime[path.extname(file)] || 'application/octet-stream' }); res.end(data); }
+  try { const data = await readFile(file); const type = mime[path.extname(file)] || 'application/octet-stream';
+    const range = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
+    if (range) { const start=Number(range[1]), end=range[2]?Math.min(Number(range[2]),data.length-1):data.length-1;
+      if(start>end||start>=data.length){res.writeHead(416,{'Content-Range':`bytes */${data.length}`});return res.end();}
+      res.writeHead(206,{...headers,'Content-Type':type,'Content-Range':`bytes ${start}-${end}/${data.length}`,'Accept-Ranges':'bytes','Content-Length':end-start+1});return res.end(data.subarray(start,end+1));}
+    res.writeHead(200, { ...headers, 'Content-Type': type, 'Accept-Ranges':'bytes', 'Content-Length':data.length }); res.end(data); }
   catch { json(404, { error: 'Not found.' }); }
 });
 server.requestTimeout = 35000;

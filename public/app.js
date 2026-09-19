@@ -111,7 +111,7 @@ async function run() {
       if (++decisionsThisRun > 16) throw new Error('Decision limit reached. Review the scene before continuing.');
       const revision = sceneRevision;
       busy = true; controller = new AbortController(); setControls(); phase('Jev is observing the workcell…');
-      const response = await fetch('/api/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const response = await fetch('/api/decide', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Demo-Key': $('workcell-key').value },
         body: JSON.stringify({ mission: activeMission, objects, blockedBins: [...blockedBins] }), signal: controller.signal });
       const decision = await response.json();
       if (generation !== runId) break;
@@ -200,7 +200,7 @@ $('export').addEventListener('click', () => {
   const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'openarm-jev-run.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 async function status() {
-  try { const response = await fetch('/api/status'); const state = await response.json(); configured = state.configured;
+  try { const response = await fetch('/api/status'); const state = await response.json(); configured = state.configured; $('workcell-key-label').hidden=!state.requiresKey;
     $('connection-label').textContent = configured ? 'Jev configured · ready to connect' : 'Account configuration required'; $('connection-dot').className = `dot ${configured ? '' : 'amber'}`;
     if (!configured) notice(state.message);
   } catch { notice('Cannot reach the local server. Start it with npm start.'); }

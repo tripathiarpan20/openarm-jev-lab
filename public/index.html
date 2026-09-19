@@ -10,7 +10,7 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/" aria-label="OpenArm home"><svg viewBox="0 0 32 32" fill="none"><path d="M7 25V14l9-8 9 8v11M12 25v-8l4-4 4 4v8" stroke="currentColor" stroke-width="2.5"/></svg><span>OpenArm<span class="brand-light"> / lab</span></span></a>
-    <nav aria-label="Workspace"><span class="nav-active">Workcell</span><span class="nav-note">Autonomous manipulation</span></nav>
+    <nav aria-label="Workspace"><span class="nav-active">Workcell</span><a class="nav-note" href="/">LIBERO experiment ↗</a></nav>
     <div class="model-tag"><span class="spark">✳</span> Powered by <strong>Jev</strong><span class="tag">ONLY</span></div>
   </header>
   <main>
@@ -30,6 +30,7 @@
         <div class="recipes" role="group" aria-label="Mission presets"><button data-recipe="quality" class="recipe active">✧ Quality sort</button><button data-recipe="color" class="recipe">◉ Color sort</button><button data-recipe="inspect" class="recipe">⌕ Inspect all</button><button data-recipe="violet" class="recipe">↗ Violet only</button></div>
         <label for="mission-input" class="sr-only">Mission instruction</label><textarea id="mission-input" maxlength="1600" rows="4" spellcheck="false"></textarea>
         <div class="mission-input-footer"><span>Natural language → typed decisions</span><span>↵</span></div>
+        <label id="workcell-key-label" hidden>Demo access key <input id="workcell-key" type="password" autocomplete="off"></label>
         <button id="start" class="primary" disabled><span id="start-text">Start mission</span><span>↗</span></button>
         <div class="secondary-controls"><button id="pause" disabled>Ⅱ Pause</button><button id="calibrate" title="Exercise the motion controller without calling a model">⌁ Motion check</button><button id="reset">↺ Reset</button><button id="stop" disabled>■ Stop</button></div>
         <div id="notice" class="notice" role="status" hidden></div>
